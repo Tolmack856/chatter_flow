@@ -6,34 +6,115 @@ class ChatManager {
         this.socket = null;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
-        this.messageQueue = []; // Очередь для сообщений при переподключении
+        this.messageQueue = [];
+        // 🔥 Новые свойства для работы с изображениями
+        this.pendingImage = null;
+        this.pendingImageName = '';
         this.init();
     }
 
     init() {
         this.bindEvents();
-        // WebSocket подключится после авторизации
     }
 
     bindEvents() {
         // Навигация
-        document.getElementById('back-to-chats').addEventListener('click', () => this.showChatList());
-        document.getElementById('back-from-profile').addEventListener('click', () => this.showChatList());
+        document.getElementById('back-to-chats')?.addEventListener('click', () => this.showChatList());
+        document.getElementById('back-from-profile')?.addEventListener('click', () => this.showChatList());
         
         // Отправка сообщений
-        document.getElementById('send-message').addEventListener('click', () => this.sendMessage());
-        document.getElementById('message-input').addEventListener('keypress', (e) => {
+        document.getElementById('send-message')?.addEventListener('click', () => this.sendMessage());
+        document.getElementById('message-input')?.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.sendMessage();
         });
         
         // Поиск
-        document.getElementById('search-toggle').addEventListener('click', () => this.toggleSearch());
-        document.getElementById('chat-search').addEventListener('input', (e) => this.searchChats(e.target.value));
+        document.getElementById('search-toggle')?.addEventListener('click', () => this.toggleSearch());
+        document.getElementById('chat-search')?.addEventListener('input', (e) => this.searchChats(e.target.value));
         
         // Вкладки чатов
         document.querySelectorAll('.chat-list-tab').forEach(tab => {
             tab.addEventListener('click', (e) => this.filterChats(e.target.dataset.tab));
         });
+
+        // 🔥 Обработчик выбора изображения
+        const imageInput = document.getElementById('image-input');
+        if (imageInput) {
+            imageInput.addEventListener('change', (e) => this.handleImageSelect(e));
+        }
+        
+        // Кнопка прикрепления (если есть в вашем HTML)
+        const attachBtn = document.getElementById('attach-image');
+        if (attachBtn) {
+            attachBtn.addEventListener('click', () => {
+                document.getElementById('image-input')?.click();
+            });
+        }
+    }
+
+    // 🔥 Обработка выбора файла
+    handleImageSelect(event) {
+        const file = event.target.files[0];
+        if (!file || !file.type.startsWith('image/')) {
+            this.showErrorMessage('Пожалуйста, выберите изображение');
+            event.target.value = '';
+            return;
+        }
+
+        // Ограничение размера (10 МБ)
+        if (file.size > 10 * 1024 * 1024) {
+            this.showErrorMessage('Файл слишком большой (макс. 10 МБ)');
+            event.target.value = '';
+            return;
+        }
+
+        this.pendingImage = file;
+        this.pendingImageName = file.name;
+        
+        console.log('🖼️ Изображение готово:', { 
+            name: file.name, 
+            size: file.size, 
+            type: file.type 
+        });
+        
+        // Показываем превью если есть элемент
+        this.showImagePreview(file);
+        
+        // Очищаем input для повторного выбора того же файла
+        event.target.value = '';
+    }
+
+    // 🔥 Показ превью изображения
+    showImagePreview(file) {
+        const previewContainer = document.getElementById('image-preview');
+        if (!previewContainer) return;
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            previewContainer.innerHTML = `
+                <div class="preview-wrapper">
+                    <img src="${e.target.result}" alt="preview" class="preview-image">
+                    <button type="button" class="preview-remove" title="Убрать">&times;</button>
+                </div>
+            `;
+            previewContainer.style.display = 'block';
+            
+            previewContainer.querySelector('.preview-remove')?.addEventListener('click', () => {
+                this.clearPendingImage();
+            });
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // 🔥 Очистка выбранного изображения
+    clearPendingImage() {
+        this.pendingImage = null;
+        this.pendingImageName = '';
+        const preview = document.getElementById('image-preview');
+        if (preview) {
+            preview.style.display = 'none';
+            preview.innerHTML = '';
+        }
     }
 
     connectWebSocket() {
@@ -57,15 +138,12 @@ class ChatManager {
                 console.log('WebSocket connected successfully');
                 this.reconnectAttempts = 0;
                 
-                // Аутентифицируем пользователя
                 this.socket.send(JSON.stringify({
                     type: 'authenticate',
                     userId: auth.getCurrentUser().id
                 }));
                 
                 this.updateWebSocketStatus(true);
-                
-                // Обрабатываем сообщения из очереди
                 this.processMessageQueue();
             };
             
@@ -99,7 +177,6 @@ class ChatManager {
                 this.updateWebSocketStatus(false);
             };
 
-            // Пинг каждые 20 секунд
             if (this.pingInterval) {
                 clearInterval(this.pingInterval);
             }
@@ -116,7 +193,6 @@ class ChatManager {
     }
     
     processMessageQueue() {
-        // Обрабатываем сообщения, которые пришли во время отключения
         while (this.messageQueue.length > 0) {
             const message = this.messageQueue.shift();
             this.handleNewMessage(message);
@@ -125,7 +201,6 @@ class ChatManager {
     
     queueMessage(message) {
         this.messageQueue.push(message);
-        // Ограничиваем очередь 50 сообщениями
         if (this.messageQueue.length > 50) {
             this.messageQueue.shift();
         }
@@ -154,13 +229,11 @@ class ChatManager {
         switch (data.type) {
             case 'authenticated':
                 console.log('WebSocket authenticated for user:', data.userId);
-                // Загружаем чаты после успешной аутентификации
                 this.loadChats();
                 break;
                 
             case 'message_sent':
                 console.log('Message sent confirmation:', data.message);
-                // Подтверждение отправки - обновляем список чатов
                 this.loadChats();
                 break;
                 
@@ -205,7 +278,6 @@ class ChatManager {
                 this.chats = await response.json();
                 this.renderChats();
                 
-                // Если нет текущего чата, открываем общий чат
                 if (!this.currentChat && this.chats.length > 0) {
                     const generalChat = this.chats.find(chat => chat.id === 'general-chat');
                     if (generalChat) {
@@ -222,6 +294,8 @@ class ChatManager {
 
     renderChats() {
         const chatList = document.getElementById('chat-list');
+        if (!chatList) return;
+        
         chatList.innerHTML = '';
 
         if (this.chats.length === 0) {
@@ -244,7 +318,7 @@ class ChatManager {
                         <span class="time">${time}</span>
                     </div>
                     <div class="chat-item-message">
-                        <p>${lastMessage.text}</p>
+                        <p>${this.escapeHtml(lastMessage.text || '')}</p>
                     </div>
                 </div>
             `;
@@ -257,27 +331,22 @@ class ChatManager {
     async openChat(chat) {
         this.currentChat = chat;
         
-        // Обновляем заголовок чата
         document.getElementById('chat-with-name').textContent = chat.name;
         document.getElementById('chat-status').textContent = 'в сети';
         document.getElementById('chat-status').className = 'status-online';
         
-        // Показываем экран чата
         app.showScreen('screen-chat');
         
-        // Загружаем сообщения через WebSocket если подключен
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
             this.socket.send(JSON.stringify({
                 type: 'request_messages',
                 chatId: chat.id
             }));
         } else {
-            // Иначе через HTTP
             await this.loadMessages(chat.id);
         }
         
-        // Фокусируемся на поле ввода
-        document.getElementById('message-input').focus();
+        document.getElementById('message-input')?.focus();
     }
 
     async loadMessages(chatId) {
@@ -301,40 +370,40 @@ class ChatManager {
         }
     }
 
-renderMessages(messages) {
-    const chatMessages = document.getElementById('chat-messages');
-    const loadingIndicator = document.getElementById('loading-messages');
-    
-    // Скрываем индикатор загрузки
-    if (loadingIndicator) {
-        loadingIndicator.style.display = 'none';
-    }
-    
-    chatMessages.innerHTML = '';
-
-    if (messages.length === 0) {
-        chatMessages.innerHTML = '<div class="loading">Нет сообщений</div>';
-        return;
-    }
-
-    messages.forEach(message => {
-        const messageElement = this.createMessageElement(message);
-        // Помечаем временные сообщения
-        if (message.isTemp) {
-            messageElement.classList.add('temp-message');
+    renderMessages(messages) {
+        const chatMessages = document.getElementById('chat-messages');
+        const loadingIndicator = document.getElementById('loading-messages');
+        
+        if (loadingIndicator) {
+            loadingIndicator.style.display = 'none';
         }
-        chatMessages.appendChild(messageElement);
-    });
+        
+        if (!chatMessages) return;
+        
+        chatMessages.innerHTML = '';
 
-    // Прокручиваем вниз
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-}
+        if (messages.length === 0) {
+            chatMessages.innerHTML = '<div class="loading">Нет сообщений</div>';
+            return;
+        }
+
+        messages.forEach(message => {
+            const messageElement = this.createMessageElement(message);
+            if (message.isTemp) {
+                messageElement.classList.add('temp-message');
+            }
+            chatMessages.appendChild(messageElement);
+        });
+
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
 
     createMessageElement(message) {
         const container = document.createElement('div');
         const isSent = message.senderId === auth.getCurrentUser().id;
         
         container.className = `chat-message-container ${isSent ? 'sent' : 'received'}`;
+        container.setAttribute('data-message-id', message.id);
         
         const time = this.formatTime(message.timestamp);
         const senderName = message.sender ? message.sender.fullname : 'Неизвестный';
@@ -342,23 +411,34 @@ renderMessages(messages) {
             message.sender.fullname.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) : 
             '??';
 
+        // 🔥 Рендер изображения если есть
+        const imageHtml = message.image ? `
+            <div class="message-image">
+                <img src="${message.image}" alt="${message.imageName || 'Изображение'}" 
+                     class="chat-image" loading="lazy" style="max-width: 100%; border-radius: 12px; margin: 4px 0;">
+                ${message.imageName ? `<span class="image-name" style="font-size: 11px; color: #8e8e93; display: block;">${this.escapeHtml(message.imageName)}</span>` : ''}
+            </div>
+        ` : '';
+
+        const textHtml = message.text ? `<div class="message-text">${this.escapeHtml(message.text)}</div>` : '';
+
         if (isSent) {
-            // Сообщения текущего пользователя - справа
             container.innerHTML = `
-                <div class="chat-message-bubble">
-                    ${this.escapeHtml(message.text)}
+                <div class="chat-message-bubble" style="display: flex; flex-direction: column; align-items: flex-end;">
+                    ${imageHtml}
+                    ${textHtml}
                 </div>
                 <div class="chat-message-time">${time}</div>
             `;
         } else {
-            // Сообщения других пользователей - слева с аватаром и именем
             container.innerHTML = `
                 <div class="message-sender-info">
                     <div class="message-avatar">${avatarText}</div>
                     <div class="message-content">
                         <div class="sender-name">${senderName}</div>
-                        <div class="chat-message-bubble">
-                            ${this.escapeHtml(message.text)}
+                        <div class="chat-message-bubble" style="display: flex; flex-direction: column; align-items: flex-start;">
+                            ${imageHtml}
+                            ${textHtml}
                         </div>
                         <div class="chat-message-time">${time}</div>
                     </div>
@@ -369,8 +449,8 @@ renderMessages(messages) {
         return container;
     }
     
-    // Вспомогательная функция для экранирования HTML
     escapeHtml(text) {
+        if (!text) return '';
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
@@ -378,76 +458,149 @@ renderMessages(messages) {
     
     addMessageToChat(message) {
         const messageElement = this.createMessageElement(message);
-        messageElement.setAttribute('data-message-id', message.id);
-        document.getElementById('chat-messages').appendChild(messageElement);
-        
-        // Прокручиваем вниз
         const chatMessages = document.getElementById('chat-messages');
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        if (chatMessages) {
+            chatMessages.appendChild(messageElement);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
     }
 
+    // 🔥 Основная функция отправки с поддержкой изображений
     async sendMessage() {
         const input = document.getElementById('message-input');
         const sendButton = document.getElementById('send-message');
-        const text = input.value.trim();
+        const text = input?.value.trim() || '';
 
-        if (!text || !this.currentChat) {
+        // 🔥 Проверка: есть ли контент (текст ИЛИ изображение)
+        const hasContent = text.length > 0;
+        const hasImage = !!this.pendingImage;
+        
+        console.log('🔍 Проверка перед отправкой:', {
+            hasContent,
+            hasImage,
+            hasImageBlob: this.pendingImage instanceof Blob,
+            contentLength: text.length,
+            imageLength: this.pendingImage?.size
+        });
+
+        if (!hasContent && !hasImage) {
+            console.warn('⚠️ Нет контента для отправки (ни текста, ни изображения)');
             return;
         }
 
-        // Блокируем интерфейс на время отправки
-        input.disabled = true;
-        sendButton.disabled = true;
-        input.classList.add('sending');
+        if (!this.currentChat) {
+            console.warn('⚠️ Нет активного чата');
+            return;
+        }
+
+        // Блокируем интерфейс
+        if (input) input.disabled = true;
+        if (sendButton) sendButton.disabled = true;
+        if (input) input.classList.add('sending');
         
         try {
-            input.value = '';
+            const messageText = text;
+            const imageBlob = this.pendingImage;
+            const imageName = this.pendingImageName;
+            
+            // Очищаем поля ввода сразу
+            if (input) input.value = '';
+            this.clearPendingImage();
             
             if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-                this.socket.send(JSON.stringify({
-                    type: 'send_message',
-                    chatId: this.currentChat.id,
-                    text: text
-                }));
-                
-                // Показываем локальное сообщение сразу для лучшего UX
-                const tempMessage = {
-                    id: 'temp-' + Date.now(),
-                    text: text,
-                    chatId: this.currentChat.id,
-                    senderId: auth.getCurrentUser().id,
-                    timestamp: new Date().toISOString(),
-                    sender: {
-                        id: auth.getCurrentUser().id,
-                        username: auth.getCurrentUser().username,
-                        fullname: auth.getCurrentUser().fullname
-                    },
-                    isTemp: true
-                };
-                
-                this.addMessageToChat(tempMessage);
-                
+                await this.sendMessageViaWebSocket(messageText, imageBlob, imageName);
             } else {
-                // Если WebSocket не доступен, используем HTTP
                 console.log('WebSocket not connected, using HTTP');
-                const message = await this.sendMessageViaHTTP(text);
+                const message = await this.sendMessageViaHTTP(messageText, imageBlob, imageName);
                 this.addMessageToChat(message);
             }
             
         } catch (error) {
             console.error('Error sending message:', error);
-            input.value = text; // Возвращаем текст при ошибке
             this.showErrorMessage('Ошибка отправки сообщения');
         } finally {
-            input.disabled = false;
-            sendButton.disabled = false;
-            input.classList.remove('sending');
-            input.focus();
+            if (input) input.disabled = false;
+            if (sendButton) sendButton.disabled = false;
+            if (input) input.classList.remove('sending');
+            if (input) input.focus();
         }
     }
     
+    // 🔥 Отправка через WebSocket (изображение как base64)
+    async sendMessageViaWebSocket(text, imageBlob, imageName) {
+        let imageData = null;
+        
+        if (imageBlob) {
+            imageData = await this.blobToBase64(imageBlob);
+        }
+        
+        const payload = {
+            type: 'send_message',
+            chatId: this.currentChat.id,
+            text: text,
+            image: imageData,
+            imageName: imageName
+        };
+        
+        this.socket.send(JSON.stringify(payload));
+        
+        // Показываем локальное сообщение для мгновенного отклика
+        const tempMessage = {
+            id: 'temp-' + Date.now(),
+            text: text,
+            image: imageData,
+            imageName: imageName,
+            chatId: this.currentChat.id,
+            senderId: auth.getCurrentUser().id,
+            timestamp: new Date().toISOString(),
+            sender: {
+                id: auth.getCurrentUser().id,
+                username: auth.getCurrentUser().username,
+                fullname: auth.getCurrentUser().fullname
+            },
+            isTemp: true
+        };
+        
+        this.addMessageToChat(tempMessage);
+    }
+    
+    // 🔥 Отправка через HTTP с FormData
+    async sendMessageViaHTTP(text, imageBlob, imageName) {
+        const formData = new FormData();
+        formData.append('text', text || '');
+        
+        if (imageBlob) {
+            formData.append('image', imageBlob, imageName);
+        }
+        
+        const response = await fetch(`${this.apiBase}/api/chats/${this.currentChat.id}/messages`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${auth.getToken()}`
+                // Content-Type не устанавливаем — браузер добавит boundary автоматически
+            },
+            body: formData
+        });
+
+        if (!response.ok) {
+            const errorData = await response.text().catch(() => null);
+            throw new Error(`HTTP send failed: ${response.status} ${errorData || ''}`);
+        }
+
+        return await response.json();
+    }
+    
+    // 🔥 Вспомогательная функция: Blob → base64
+    blobToBase64(blob) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    }
+    
     showErrorMessage(text) {
-        // Показываем временное сообщение об ошибке
         const errorDiv = document.createElement('div');
         errorDiv.className = 'error-message';
         errorDiv.textContent = text;
@@ -470,42 +623,21 @@ renderMessages(messages) {
         }, 3000);
     }
 
-    async sendMessageViaHTTP(text) {
-        const response = await fetch(`${this.apiBase}/api/chats/${this.currentChat.id}/messages`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${auth.getToken()}`
-            },
-            body: JSON.stringify({ text })
-        });
-
-        if (!response.ok) {
-            throw new Error('HTTP send failed');
-        }
-
-        return await response.json();
-    }
-
     handleNewMessage(message) {
-        // Проверяем, не было ли уже добавлено это сообщение
         const existingMessage = document.querySelector(`[data-message-id="${message.id}"]`);
         if (existingMessage) {
             console.log('Message already exists, skipping');
             return;
         }
         
-        // Если сообщение для текущего открытого чата
         if (this.currentChat && message.chatId === this.currentChat.id) {
             this.addMessageToChat(message);
         }
         
-        // Обновляем список чатов для отображения последнего сообщения
         this.loadChats();
     }
     
     handleChatMessages(chatId, messages) {
-        // Если это сообщения для текущего чата
         if (this.currentChat && this.currentChat.id === chatId) {
             this.renderMessages(messages);
         }
@@ -519,11 +651,13 @@ renderMessages(messages) {
 
     toggleSearch() {
         const searchContainer = document.getElementById('search-container');
+        if (!searchContainer) return;
+        
         const isVisible = searchContainer.style.display === 'block';
         searchContainer.style.display = isVisible ? 'none' : 'block';
         
         if (!isVisible) {
-            document.getElementById('chat-search').focus();
+            document.getElementById('chat-search')?.focus();
         }
     }
 
@@ -532,8 +666,8 @@ renderMessages(messages) {
         const searchTerm = query.toLowerCase();
         
         chatItems.forEach(item => {
-            const name = item.querySelector('.name').textContent.toLowerCase();
-            const message = item.querySelector('.chat-item-message p').textContent.toLowerCase();
+            const name = item.querySelector('.name')?.textContent.toLowerCase() || '';
+            const message = item.querySelector('.chat-item-message p')?.textContent.toLowerCase() || '';
             
             if (name.includes(searchTerm) || message.includes(searchTerm)) {
                 item.style.display = 'flex';
@@ -547,18 +681,17 @@ renderMessages(messages) {
         document.querySelectorAll('.chat-list-tab').forEach(tab => {
             tab.classList.remove('active');
         });
-        document.querySelector(`[data-tab="${filter}"]`).classList.add('active');
-        
-        // В этой версии просто показываем все чаты
-        // В будущем можно добавить фильтрацию по типам
+        document.querySelector(`[data-tab="${filter}"]`)?.classList.add('active');
         this.renderChats();
     }
 
     updateUserStatus(userId, isOnline) {
-        if (this.currentChat && this.currentChat.participants.includes(userId)) {
+        if (this.currentChat && this.currentChat.participants?.includes(userId)) {
             const statusElement = document.getElementById('chat-status');
-            statusElement.textContent = isOnline ? 'в сети' : 'не в сети';
-            statusElement.className = isOnline ? 'status-online' : 'status-offline';
+            if (statusElement) {
+                statusElement.textContent = isOnline ? 'в сети' : 'не в сети';
+                statusElement.className = isOnline ? 'status-online' : 'status-offline';
+            }
         }
     }
 
@@ -567,21 +700,18 @@ renderMessages(messages) {
         const now = new Date();
         const diff = now - date;
         
-        // Для сегодняшних сообщений показываем время
         if (diff < 24 * 60 * 60 * 1000) {
             return date.toLocaleTimeString('ru-RU', { 
                 hour: '2-digit', 
                 minute: '2-digit' 
             });
         } 
-        // Для вчерашних - вчера и время
         else if (diff < 48 * 60 * 60 * 1000) {
             return `вчера в ${date.toLocaleTimeString('ru-RU', { 
                 hour: '2-digit', 
                 minute: '2-digit' 
             })}`;
         }
-        // Для более старых - дата и время
         else {
             return date.toLocaleDateString('ru-RU', { 
                 day: 'numeric',
